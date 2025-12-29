@@ -14,17 +14,34 @@ torch::Tensor kernel_binding(torch::Tensor a, torch::Tensor b);
 #include <cuda_runtime.h>
 
 __global__ void matmul_kernel(int n, int m, int k, float* a, float* b, float* c) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    /*
+    Thread assignment:
+        0 1 2 3 
+        4 5 6 7
+        8 9 A B
+        C D E F
+    */
+
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
 
     if(row < n && col < m) {
         
         float sum = 0.0;
 
         for(int i = 0; i < k; i++) {
+            /*
+            A access pattern: broadcast 
+            B access pattern: coalesced 
+            */
+
+
             sum += a[row * k + i] * b[i * m + col];
         }
 
+        /*
+        C access pattern: coalesced 
+        */
         c[row * m + col] = sum;
     }
 }
@@ -55,7 +72,7 @@ torch::Tensor kernel_binding(torch::Tensor a, torch::Tensor b) {
 
     // launch kernel
     int block_size = 32;
-    dim3 grid_dim((n + block_size - 1) / block_size, (m + block_size - 1) / block_size, 1);
+    dim3 grid_dim((m + block_size - 1) / block_size, (n + block_size - 1) / block_size, 1);
     dim3 block_dim(block_size, block_size, 1);
 
     matmul_kernel<<<grid_dim, block_dim>>>(n, m, k, a_contig.data_ptr<float>(), b_contig.data_ptr<float>(), c.data_ptr<float>());
