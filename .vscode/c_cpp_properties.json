@@ -1,0 +1,20 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/local/cuda/include",
+                "/home/saad/miniconda3/envs/ml-kernels/include",
+                "/home/saad/miniconda3/envs/ml-kernels/include/python3.14",
+                "/home/saad/miniconda3/envs/ml-kernels/lib/python3.14/site-packages/torch/include/torch/csrc/api/include",
+                "/home/saad/miniconda3/envs/ml-kernels/lib/python3.14/site-packages/torch/include"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
