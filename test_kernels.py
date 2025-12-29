@@ -41,6 +41,9 @@ def test_matmul():
     
     # Test various matrix sizes
     test_sizes = [
+        (32, 32, 32),
+        (32, 32, 64),
+        (64, 64, 32),
         (64, 64, 64),
         (128, 128, 128),
         (256, 256, 256),
