@@ -67,8 +67,13 @@ __global__ void matmul_kernel(int n, int m, int k, float* a, float* b, float* c)
 
         int k_offset = TILE_K * mmi;
 
+        #if 0
         populate_smem_tile(n, k, tile_a_row_offset, k_offset, a, smem_tile_a);
         populate_smem_tile(k, m, k_offset, tile_b_col_offset, b, smem_tile_b);
+        #else
+        smem_tile_a[threadIdx.y][threadIdx.x] = a[row * k + k_offset + threadIdx.x];
+        smem_tile_b[threadIdx.y][threadIdx.x] = b[(k_offset + threadIdx.y) * m + col];
+        #endif
 
         __syncthreads();
 
