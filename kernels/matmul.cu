@@ -13,7 +13,7 @@ torch::Tensor kernel_binding(torch::Tensor a, torch::Tensor b);
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-template<int TP, int TQ>
+template<int BY, int BX, int TP, int TQ>
 __device__ void populate_smem_tile(int p, int q, int row_offset, int col_offset, float* matrix, float (&tile)[TP][TQ]) {
     /*
     p, q - shape of matrix (p x q)
@@ -21,17 +21,46 @@ __device__ void populate_smem_tile(int p, int q, int row_offset, int col_offset,
     col_offset
     */
 
-    for(int i = threadIdx.y; i < TP; i += blockDim.y) {
-        for(int j = threadIdx.x; j < TQ; j += blockDim.x) {
-            int row_read = row_offset + i;
-            int col_read = col_offset + j;
+    
+    // for loop unrolling: avoid iterating by values dependent on threadIdx
 
-            tile[i][j] = row_read < p && col_read < q ? matrix[row_read * q + col_read] : 0.0;
+    static_assert(TP % BY == 0);
+    static_assert(TQ % BX == 0);
+
+    constexpr int TP_LDS = TP / BY;
+    constexpr int TQ_LDS = TQ / BX;
+
+    for(int i = 0; i < TP_LDS; i++) {
+        int tile_row = BY * i + threadIdx.y;
+        int row_read = row_offset + tile_row;
+
+        for(int j = 0; j < TQ_LDS; j++) {
+            int tile_col = BX * j + threadIdx.x;
+            int col_read = col_offset + tile_col;
+
+            tile[tile_row][tile_col] = matrix[row_read * q + col_read];
         }
     }
 }
 
-template<int BLOCK_SIZE, int TILE_A, int TILE_B, int TILE_K>
+template<int TP, int TQ>
+__device__ void populate_smem_tile_v2(int p, int q, int row_offset, int col_offset, float* matrix, float (&tile)[TP][TQ]) {
+    /*
+    p, q - shape of matrix (p x q)
+    row_offset
+    col_offset
+    */
+
+    int i = threadIdx.y;
+    int j = threadIdx.x;
+
+    int row_read = row_offset + i;
+    int col_read = col_offset + j;
+
+    tile[i][j] = row_read < p && col_read < q ? matrix[row_read * q + col_read] : 0.0;
+}
+
+template<int BY, int BX, int TILE_A, int TILE_B, int TILE_K>
 __global__ void matmul_kernel(int n, int m, int k, float* a, float* b, float* c) {
     /*
     Thread assignment:
@@ -67,9 +96,9 @@ __global__ void matmul_kernel(int n, int m, int k, float* a, float* b, float* c)
 
         int k_offset = TILE_K * mmi;
 
-        #if 0
-        populate_smem_tile(n, k, tile_a_row_offset, k_offset, a, smem_tile_a);
-        populate_smem_tile(k, m, k_offset, tile_b_col_offset, b, smem_tile_b);
+        #if 1
+        populate_smem_tile<BY, BX>(n, k, tile_a_row_offset, k_offset, a, smem_tile_a);
+        populate_smem_tile<BY, BX>(k, m, k_offset, tile_b_col_offset, b, smem_tile_b);
         #else
         smem_tile_a[threadIdx.y][threadIdx.x] = a[row * k + k_offset + threadIdx.x];
         smem_tile_b[threadIdx.y][threadIdx.x] = b[(k_offset + threadIdx.y) * m + col];
@@ -131,7 +160,7 @@ torch::Tensor kernel_binding(torch::Tensor a, torch::Tensor b) {
     dim3 grid_dim((m + BLOCK_SIZE - 1) / BLOCK_SIZE, (n + BLOCK_SIZE - 1) / BLOCK_SIZE, 1);
     dim3 block_dim(BLOCK_SIZE, BLOCK_SIZE, 1);
 
-    matmul_kernel<BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE><<<grid_dim, block_dim>>>(n, m, k, a_contig.data_ptr<float>(), b_contig.data_ptr<float>(), c.data_ptr<float>());
+    matmul_kernel<BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE><<<grid_dim, block_dim>>>(n, m, k, a_contig.data_ptr<float>(), b_contig.data_ptr<float>(), c.data_ptr<float>());
 
     // check for kernel launch errors
     cudaError_t err = cudaGetLastError();
