@@ -40,7 +40,8 @@ __device__ void populate_smem_tile(int p, int q, int row_offset, int col_offset,
             int tile_col = BX * j + threadIdx.x;
             int col_read = col_offset + tile_col;
 
-            tile[tile_row][tile_col] = row_read < p && col_read < q ? matrix[row_read * q + col_read] : 0;
+            //tile[tile_row][tile_col] = row_read < p && col_read < q ? matrix[row_read * q + col_read] : 0;
+            tile[tile_row][tile_col] = matrix[row_read * q + col_read];
         }
     }
 }
@@ -134,9 +135,7 @@ __global__ void matmul_kernel(int n, int m, int k, float* a, float* b, float* c)
             int res_r = tile_a_row_offset + tr_base + r;
             int res_c = tile_b_col_offset + tc_base + c_off;
 
-            if(res_r < n && res_c < m) {
-                c[res_r * m + res_c] = c_reg[r * REG_B + c_off];
-            }
+            c[res_r * m + res_c] = c_reg[r * REG_B + c_off];
         }
     }
 }
@@ -167,13 +166,13 @@ torch::Tensor kernel_binding(torch::Tensor a, torch::Tensor b) {
 
     // launch kernel
     constexpr int BLOCK_SIZE = 16;
-    constexpr int REG_TILING = 4;
+    constexpr int REG_TILING = 8;
     constexpr int SIDE_LEN = BLOCK_SIZE * REG_TILING;
 
     dim3 grid_dim((m + SIDE_LEN - 1) / SIDE_LEN, (n + SIDE_LEN - 1) / SIDE_LEN, 1);
     dim3 block_dim(BLOCK_SIZE, BLOCK_SIZE, 1);
 
-    matmul_kernel<16, 16, 64, 64, 16, 4, 4><<<grid_dim, block_dim>>>(n, m, k, a_contig.data_ptr<float>(), b_contig.data_ptr<float>(), c.data_ptr<float>());
+    matmul_kernel<BLOCK_SIZE, BLOCK_SIZE, SIDE_LEN, SIDE_LEN, BLOCK_SIZE, REG_TILING, REG_TILING><<<grid_dim, block_dim>>>(n, m, k, a_contig.data_ptr<float>(), b_contig.data_ptr<float>(), c.data_ptr<float>());
 
     // check for kernel launch errors
     cudaError_t err = cudaGetLastError();
